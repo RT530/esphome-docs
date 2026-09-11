@@ -20,30 +20,7 @@ jobs:
     if: github.repository != 'esphome/esphome.io'
     runs-on: ubuntu-latest
     steps:
-      # GitHub does this merge server-side - the same operation as the "Sync fork"
-      # button on the repo page. Because nothing is pushed over git, it is not
-      # subject to the rule that refuses to let GITHUB_TOKEN create or update
-      # files under .github/workflows/**. That rule is what failed every sync here
-      # while upstream was editing its own workflows, and working around it is why
-      # this step exists instead of a plain fetch/merge/push.
-      - name: Sync fork via merge-upstream API
-        id: sync
-        env:
-          GH_TOKEN: ${{ secrets.SYNC_TOKEN || github.token }}
-        run: |
-          if gh api --method POST "/repos/$GITHUB_REPOSITORY/merge-upstream" \
-               -f branch=next > merge.json; then
-            jq -r '"\(.merge_type): \(.message)"' merge.json
-            echo "ok=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::warning::merge-upstream API declined; falling back to git merge"
-            echo "ok=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      # Only reached when the API refuses - in practice a genuine merge conflict
-      # between the fork and upstream, which needs a real working tree to resolve.
       - name: Checkout fork
-        if: steps.sync.outputs.ok != 'true'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -54,24 +31,20 @@ jobs:
           token: ${{ secrets.SYNC_TOKEN || github.token }}
 
       - name: Configure git identity
-        if: steps.sync.outputs.ok != 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Fetch upstream
-        if: steps.sync.outputs.ok != 'true'
         run: |
           git remote add upstream https://github.com/esphome/esphome.io.git
           git fetch upstream next
 
       - name: Merge upstream/next into next
-        if: steps.sync.outputs.ok != 'true'
         run: |
           git merge upstream/next --no-edit
 
       - name: Push
-        if: steps.sync.outputs.ok != 'true'
         run: |
           if ! git push origin next; then
             echo "::error::Push failed. If the error mentions the workflows"
